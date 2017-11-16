@@ -1,0 +1,129 @@
+DEPTH=1024; 	% Memory depth and width are required 
+		% DEPTH is the number of addresses 
+WIDTH = 32; 	% WIDTH is the number of bits of data per word
+		% DEPTH and WIDTH should be entered as decimal numbers
+
+ADDRESS_RADIX = DEC; 	% Address and value radixes are required
+DATA_RADIX = HEX; 	% Enter BIN, DEC, HEX, OCT, or UNS; unless
+			% otherwise specified, radixes = HEX
+
+-- Specify values for addresses, which can be single address or range
+-- SOME THINGS TO CONSIDER
+-- 1) This memory is word-addressable, versus the MIPS conceptual byte-addressable memory.
+--    This means that address 1 corresponds to word 1, address 2 corresponds to word 2, etc.
+--    Since MIPS will be generating byte addresses, you will have to create some (very simple)
+--    logic in your VHDL wrapper to deal with byte/word offsets. 
+-- 2) The "single address" notation seems to be least likely to cause confusion so that is what
+--    I recommend. 
+-- 3) The values need to be in 32-bit hex form (i.e. don't use F when you really mean 0000000F).
+
+CONTENT
+BEGIN
+
+0:
+20080001
+00084820
+01205020
+00000000
+00000000
+20080004
+2009ffff
+00085020
+01205820
+00000000
+00000000
+20080006
+20080005
+01084820
+00000000
+00000000
+2008000a
+20000008
+00004820
+00085020
+00000000
+00000000
+20080004
+2009ff9c
+ad090000
+00000000
+00000000
+20080008
+8d090000
+2008000c
+00000000
+8d0a0000
+00000000
+00000000
+20080000
+00000000
+00000000
+00000000
+20080023
+00000000
+11000003
+00000000
+00000000
+00000000
+00000000
+00000000
+00000000
+08000034
+2009000a
+00000000
+00000000
+00000000
+00000000
+00000000
+10000004
+2008000c
+00000000
+00000000
+00000000
+20080014
+00000000
+00000000
+2008000b
+00000000
+00000000
+00000000
+11000004
+01084820
+00000000
+00000000
+00000000
+00000000
+00000000
+00000000
+20080000
+00000000
+00000000
+00000000
+20080028
+11000003
+20090032
+00000000
+00000000
+00000000
+00000000
+00000000
+00004020
+00000000
+00000000
+00000000
+8c080014
+01084820
+00000000
+00000000
+00000000
+00004020
+00000000
+00000000
+00000000
+8c080018
+00000000
+01084820
+00000000
+00000000
+00000000;
+END;

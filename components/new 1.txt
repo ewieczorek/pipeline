@@ -1,0 +1,211 @@
+-- Author: Ethan Wieczorek
+library IEEE;
+use IEEE.std_logic_1164.all;
+use work.all;
+
+entity pipelinedProcessor is
+	port (	reset : in std_logic;
+		i_clock : in std_logic
+		);
+end pipelinedProcessor;
+
+architecture dataflow of pipelinedProcessor is
+signal byteEn : std_logic_vector(3 downto 0) := (others => '1'); --byteena is to be set to all 1s for this project
+signal imemData : std_logic_vector(31 downto 0) := (others => '0');
+
+--Below is all of the entity output signals going from left to right on the diagram
+	--The inputs of all entities match up to output signals of other entities,
+	--the corresponding output signal is directly wired to the inputs to avoid data loss and to avoid unecessary signals.
+--PC
+signal PC_reg_out : std_logic_vector(31 downto 0);
+--Instruction memory (IMEM)
+signal IMEM_out : std_logic_vector(31 downto 0);
+--32 bit adder top left
+signal adder1_out : std_logic_vector(31 downto 0);
+--Shift left top left
+signal SLL1_out : std_logic_vector(31 downto 0);
+signal shiftInputConcat : std_logic_vector(31 downto 0) := (others => '0');
+--Control unit outputs
+signal RegDst_out : std_logic;
+signal Jump_out : std_logic;
+signal Branch_out : std_logic;
+--(not used) signal MemRead_out : std_logic;
+signal MemtoReg_out : std_logic;
+signal ALUop_out : std_logic_vector(3 downto 0);
+signal MemWrite_out : std_logic;
+signal ALUsrc_out : std_logic;
+signal RegWrite_out : std_logic;
+--First 5-bit mux, input to the register file
+signal muxRegInput_out : std_logic_vector(4 downto 0);
+--Register file
+signal data1_out : std_logic_vector(31 downto 0);
+signal data2_out : std_logic_vector(31 downto 0);
+--Sign extender 
+signal signExtend_out : std_logic_vector(31 downto 0);
+--Shift left load input to the 2nd adder, output of the sign extender. top right. 
+signal SLL2_out : std_logic_vector(31 downto 0);
+--Second multiplexer, input to the ALU. 32 bit
+signal muxALUInput_out : std_logic_vector(31 downto 0);
+--Second adder, adding sign extended instruction and the output of the other adder. top right
+signal adder2_out : std_logic_vector(31 downto 0);
+--ALU unit
+signal zero_out : std_logic;
+signal ALU_out : std_logic_vector(31 downto 0);
+--And unit 
+signal AND_out : std_logic;
+--Multiplexer top right second adder output
+signal muxAdderOutput_out : std_logic_vector(31 downto 0);
+--Multiplexer top right output of the other multiplexer
+signal muxMUXoutput_out : std_logic_vector(31 downto 0);
+--signal mux1ValueInput : std_logic_vector(31 downto 0);
+--Data memory outputs
+signal dmemData_out : std_logic_vector(31 downto 0);
+--bottom right multiplexer. output of the dmem and output of the ALU
+signal muxDMEMoutput_out : std_logic_vector(31 downto 0);
+
+
+begin
+
+	--PC register
+	PCREG1 : entity work.PC_reg port map (i_clock, reset, muxMUXoutput_out, PC_reg_out);
+	--Instruction memory unit
+	IMEM1 : entity work.imem port map (PC_reg_out(11 downto 2), byteEn, i_clock, imemData, '0', IMEM_out);
+	--32 bit adder top left of diagram
+	ADD1 : entity work.adder_32 port map (PC_reg_out, x"00000004", adder1_out);
+	--Shift register top left, first the remaining 6 bits must be made to zero on the input
+	shiftInputConcat(25 downto 0) <= IMEM_out(25 downto 0); --shiftInputConcat is set to 32 zeros initially, so this leaves it as size 32 but changes the first 26 bits
+	SLL1 : entity work.sll_2 port map (shiftInputConcat, SLL1_out);
+	--then combine the bits 31-28 of PC+4 with the bits of the shift regsiter.
+	SLL1_out(31 downto 28) <= adder1_out(31 downto 28); --SLL1 out is already filled with 28 bits, but is of size 32, so we are 
+	--Control Unit
+	--imem out said to use (31 downto 26) but that through an error
+	MC1 : entity work.main_control port map (IMEM_out, RegDst_out, Jump_out, Branch_out, MemtoReg_out, ALUop_out, MemWrite_out, ALUsrc_out, RegWrite_out);
+	--First 5-bit mux, input to the register file
+	MUX5BIT1 : entity work.mux21_5bit port map (IMEM_out(20 downto 16), IMEM_out(15 downto 11), RegDst_out, muxRegInput_out);
+	--Register file
+	REG1 : entity work.register_file port map (i_clock, IMEM_out(25 downto 21), IMEM_out(20 downto 16), muxDMEMoutput_out, muxRegInput_out, RegWrite_out, reset, data1_out, data2_out);
+	--Sign extender
+	SE1 : entity work.sign_extender_16_32 port map (IMEM_out(15 downto 0), signExtend_out);
+	--Shift left load input to the 2nd adder, output of the sign extender. top right. 
+	SLL2 : entity work.sll_2 port map (signExtend_out, SLL2_out);
+	--Second multiplexer, input to the ALU. 32 bit
+	MUX32BIT1 : entity work.mux21_32bit port map (data2_out, signExtend_out, ALUsrc_out, muxALUInput_out);
+	--Second adder, adding sign extended instruction and the output of the other adder. top right
+	ADD2 : entity work.adder_32 port map (adder1_out, SLL2_out, adder2_out);
+	--ALU unit
+	ALU1 : entity work.ALU port map (ALUop_out, IMEM_out(10 downto 6), data1_out, muxALUInput_out, zero_out, ALU_out);
+	--And unit
+	AND1 : entity work.and_2 port map (Branch_out, zero_out, AND_out);
+	--Multiplexer top right, second adder output, 32 bit
+	MUX32BIT2 : entity work.mux21_32bit port map (adder1_out, adder2_out, AND_out, muxAdderOutput_out);
+	--Multiplexer top right output of the other multiplexer, 32 bit
+	MUX32BIT3 : entity work.mux21_32bit port map (muxAdderOutput_out, SLL1_out, Jump_out, muxMUXoutput_out);
+	--Data memory unit
+	DMEM1 : entity work.dmem port map (ALU_out(11 downto 2), byteEn, i_clock, data2_out, MemWrite_out, dmemData_out);
+	--bottom right multiplexer. output of the dmem and output of the ALU, 32 bit.
+	MUX32BIT4 : entity work.mux21_32bit port map (ALU_out, dmemData_out, MemtoReg_out, muxDMEMoutput_out);
+	
+	
+end dataflow;
+
+--The following comments show the information behind each of the entities needed for this projet.
+--The first line of each section of information show the line used to call it as an entity.
+--The lines following the entity initialization line show the different ports in more detail,
+--this detail includes whether each port is a bus or a wire, and the size of it if it is a bus.
+--The size information is used to make sure each port is matched to a correctly sized signal.
+
+--32 bit adder information
+--ADD1 : entity work.adder_32 port map (i_A, i_B, o_F);
+--  port( i_A, i_B : in std_logic_vector(31 downto 0);
+--  	    o_F : out std_logic_vector(31 downto 0));
+
+--ALU information
+--ALU1 : entity work.ALU port map (ALU_OP, shamt, i_A, i_B, zero, ALU_out);
+--  port(ALU_OP        : in  std_logic_vector(3 downto 0);
+--       shamt         : in  std_logic_vector(4 downto 0);
+--       i_A           : in  std_logic_vector(31 downto 0);
+--       i_B           : in  std_logic_vector(31 downto 0);
+--       zero          : out std_logic;
+--       ALU_out       : out std_logic_vector(31 downto 0));
+	
+--AND 2 information
+--AND1 : entity work.and_2 port map (i_a, i_B, o_F);
+--  port( i_A, i_B : in std_logic;
+--  	    o_F : out std_logic);	
+
+--Data memory (DMEM) information
+--DMEM1 : entity work.dmem port map (address, byteena, clock, data, wren, q);
+--	port   (address			: IN STD_LOGIC_VECTOR (depth_exp_of_2-1 DOWNTO 0) := (OTHERS => '0');
+--			byteena			: IN STD_LOGIC_VECTOR (3 DOWNTO 0) := (OTHERS => '1');
+--			clock			: IN STD_LOGIC := '1';
+--			data			: IN STD_LOGIC_VECTOR (31 DOWNTO 0) := (OTHERS => '0');
+--			wren			: IN STD_LOGIC := '0';
+--			q				: OUT STD_LOGIC_VECTOR (31 DOWNTO 0));    
+
+--Instruction memory (IMEM) information
+--IMEM1 : entity work.imem port map (address, byteena, clock, data, wren, q);
+--	port   (address			: IN STD_LOGIC_VECTOR (depth_exp_of_2-1 DOWNTO 0) := (OTHERS => '0');
+--			byteena			: IN STD_LOGIC_VECTOR (3 DOWNTO 0) := (OTHERS => '1');
+--			clock			: IN STD_LOGIC := '1';
+--			data			: IN STD_LOGIC_VECTOR (31 DOWNTO 0) := (OTHERS => '0');
+--			wren			: IN STD_LOGIC := '0';
+--			q				: OUT STD_LOGIC_VECTOR (31 DOWNTO 0));  
+
+--Main Control unit information
+--MC1 : entity work.main_control port map (i_instruction, o_reg_dest, o_jump, o_branch, o_mem_to_reg, o_ALU_op, o_mem_write, o_ALU_src, o_reg_write);
+--  port( i_instruction : in std_logic_vector(31 downto 0);
+--  	    o_reg_dest : out std_logic;
+--  	    o_jump : out std_logic;
+--  	    o_branch : out std_logic;
+--  	    o_mem_to_reg : out std_logic;
+--  	    o_ALU_op : out std_logic_vector(3 downto 0);
+--  	    o_mem_write : out std_logic;
+--  	    o_ALU_src : out std_logic;
+--  	    o_reg_write : out std_logic);
+
+--2 to 1 multiplexer 1 bit information
+--MUX1BIT1 : entity work.mux21_1bit port map (i_0, i_1, i_sel, o_mux);
+--  port( i_0, i_1 : in std_logic;
+--  		i_sel : in std_logic;
+--  	    o_mux : out std_logic);
+
+--2 to 1 multiplexer 5 bit information
+--MUX5BIT1 : entity work.mux21_5bit port map (i_0, i_1, i_sel, o_mux);
+--  port( i_0, i_1 : in std_logic_vector(4 downto 0);
+--  		i_sel : in std_logic;
+--  	    o_mux : out std_logic_vector(4 downto 0));
+
+--2 to 1 multiplexer 32 bit information
+--MUX32BIT1 : entity work.mux21_32bit port map (i_0, i_1, i_sel, o_mux);
+--  port( i_0, i_1 : in std_logic_vector(31 downto 0);
+--  		i_sel : in std_logic;
+--  	    o_mux : out std_logic_vector(31 downto 0));
+
+--PC register information
+--PCREG1 : entity work.PC_reg port map (CLK, reset, i_next_PC, o_PC);
+--  port(	CLK : in std_logic;
+--  		reset : in std_logic;
+--  		i_next_PC : in std_logic_vector(31 downto 0);
+--  	   	o_PC : out std_logic_vector(31 downto 0));
+
+--Register file information
+--REG1 : entity work.register_file port map (CLK, rs_sel, rt_sel, w_data, w_sel, w_en, reset, rs_data, rt_data);
+--  port(CLK            : in  std_logic;
+--       rs_sel         : in  std_logic_vector(4 downto 0); -- first read address    
+--       rt_sel         : in  std_logic_vector(4 downto 0); -- second read address
+--       w_data         : in  std_logic_vector(31 downto 0); -- write data
+--       w_sel          : in  std_logic_vector(4 downto 0); -- write address
+--       w_en           : in  std_logic; -- write enable
+--       reset          : in  std_logic; -- resets all registers to 0
+--       rs_data        : out std_logic_vector(31 downto 0); -- first read data
+--       rt_data        : out std_logic_vector(31 downto 0)); -- second read data
+
+--Sign extender information
+--SE1 : entity work.sign_extender_16_32 port map (i_to_extend, o_extended);
+--  port(i_to_extend : in std_logic_vector(15 downto 0);
+--  	   o_extended : out std_logic_vector(31 downto 0));
+
+--Shift Left load information
+--SLL1 : entity work.sll_2 port map (i_to_shift, o_shifted);
+--  port( i_to_shift : in std_logic_vector(31 downto 0);
+--  	    o_shifted : out std_logic_vector(31 downto 0));
